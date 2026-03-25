@@ -1,6 +1,30 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, getDoc, getDocs, addDoc, onSnapshot, query, where, orderBy, Timestamp, getDocFromServer } from 'firebase/firestore';
+import { 
+  getAuth, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged, 
+  User,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  getDocs, 
+  addDoc, 
+  onSnapshot, 
+  query, 
+  where, 
+  orderBy, 
+  Timestamp, 
+  getDocFromServer,
+  deleteDoc // <--- ADDED deleteDoc
+} from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -75,6 +99,8 @@ testConnection();
 
 export { 
   signInWithPopup, 
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut, 
   onAuthStateChanged, 
   collection, 
@@ -83,6 +109,7 @@ export {
   getDoc, 
   getDocs, 
   addDoc, 
+  deleteDoc, // <--- EXPORTED deleteDoc
   onSnapshot, 
   query, 
   where, 

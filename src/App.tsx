@@ -3,10 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   ShoppingBag, 
-  User as UserIcon, 
   LogOut, 
   ChevronRight, 
   Plus, 
@@ -16,10 +15,13 @@ import {
   CheckCircle, 
   XCircle, 
   ChefHat,
-  UtensilsCrossed,
   LayoutDashboard,
   Menu as MenuIcon,
-  X
+  X,
+  Bell,
+  Phone,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -27,14 +29,16 @@ import {
   db, 
   googleProvider, 
   signInWithPopup, 
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut, 
   onAuthStateChanged, 
   collection, 
   doc, 
   setDoc, 
   getDoc, 
-  getDocs, 
   addDoc, 
+  deleteDoc,
   onSnapshot, 
   query, 
   where, 
@@ -77,10 +81,10 @@ interface Order {
   userId: string;
   customerName: string;
   customerEmail: string;
-  customerAddress: string;
+  customerPhone?: string;
   items: CartItem[];
   totalAmount: number;
-  status: 'pending' | 'preparing' | 'delivered' | 'cancelled';
+  status: 'pending' | 'preparing' | 'ready' | 'collected' | 'cancelled';
   createdAt: any;
 }
 
@@ -88,27 +92,40 @@ interface UserProfile {
   uid: string;
   displayName: string;
   email: string;
+  phoneNumber?: string;
   role: 'admin' | 'customer';
 }
 
-// --- Initial Data ---
+// --- Initial Data Loaded from PDF Menu ---
 
 const INITIAL_MENU: Omit<MenuItem, 'id'>[] = [
-  { name: 'Taro Special Sushi Set', description: 'Chef\'s selection of 12 premium nigiri and maki rolls.', price: 24.50, category: 'Sushi', subCategory: 'Set', image: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=800&auto=format&fit=crop' },
-  { name: 'Chicken Katsu Curry', description: 'Crispy breaded chicken breast served with rich Japanese curry sauce and steamed rice.', price: 14.95, category: 'Main', subCategory: 'Curry', image: 'https://images.unsplash.com/photo-1591814448473-7027b5156522?w=800&auto=format&fit=crop' },
-  { name: 'Tonkotsu Ramen', description: 'Creamy pork bone broth with chashu pork, soft-boiled egg, and bamboo shoots.', price: 15.50, category: 'Ramen', subCategory: 'Pork', image: 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=800&auto=format&fit=crop' },
-  { name: 'Vegetable Tempura', description: 'Assorted seasonal vegetables lightly battered and fried until crispy.', price: 8.50, category: 'Starters', subCategory: 'Tempura', image: 'https://images.unsplash.com/photo-1581184953963-d15972933db1?w=800&auto=format&fit=crop' },
-  { name: 'Salmon Teriyaki', description: 'Grilled salmon fillet glazed with sweet teriyaki sauce, served with vegetables.', price: 16.50, category: 'Main', subCategory: 'Grilled', image: 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=800&auto=format&fit=crop' },
-  { name: 'Matcha Green Tea Cheesecake', description: 'Creamy cheesecake infused with premium Japanese matcha powder.', price: 7.50, category: 'Dessert', subCategory: 'Cake', image: 'https://images.unsplash.com/photo-1621841957884-1210fe19d66d?w=800&auto=format&fit=crop' },
+  { name: 'Mixed Seaweed Salad', description: 'Seaweed with Japanese dressing', price: 6.90, category: 'Starters', subCategory: 'Salad', image: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=800&auto=format&fit=crop' },
+  { name: 'Edamame', description: 'Served hot or chilled, green soya beans with salt', price: 4.00, category: 'Starters', subCategory: 'Edamame', image: 'https://images.unsplash.com/photo-1581184953963-d15972933db1?w=800&auto=format&fit=crop' },
+  { name: 'Chicken Gyoza', description: 'Japanese style grilled chicken dumplings filled with vegetables', price: 6.90, category: 'Starters', subCategory: 'Gyoza', image: 'https://images.unsplash.com/photo-1541532713592-79a0317b6b77?w=800&auto=format&fit=crop' },
+  { name: 'Takoyaki', description: 'Deepfried octopus balls with tonkatsu sauce, mayonnaise', price: 8.90, category: 'Starters', subCategory: 'Takoyaki', image: 'https://images.unsplash.com/photo-1590165482129-1b8b27698780?w=800&auto=format&fit=crop' },
+  { name: 'Chicken Teriyaki Bento', description: 'Teriyaki chicken and vegetables on rice with teriyaki sauce', price: 20.90, category: 'Main', subCategory: 'Bento', image: 'https://images.unsplash.com/photo-1580828369062-81781f8f7c9e?w=800&auto=format&fit=crop' },
+  { name: 'Salmon Teriyaki Bento', description: 'Teriyaki salmon and vegetables on rice with teriyaki sauce', price: 21.90, category: 'Main', subCategory: 'Bento', image: 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=800&auto=format&fit=crop' },
+  { name: 'Chicken Teri Don', description: 'Grilled, deep-fried chicken with mix veg, and homemade teriyaki sauce on rice', price: 12.90, category: 'Main', subCategory: 'Donburi', image: 'https://images.unsplash.com/photo-1627914800362-e6e7d6cf6a09?w=800&auto=format&fit=crop' },
+  { name: 'Chicken Katsu Curry', description: 'Udon noodles or rice with deep fried breaded chicken breast in curry sauce', price: 14.90, category: 'Main', subCategory: 'Curry', image: 'https://images.unsplash.com/photo-1591814448473-7027b5156522?w=800&auto=format&fit=crop' },
+  { name: 'Tonkotsu Ramen', description: 'Noodles in pork bone soup with pork charsiu, beansprouts, seaweed', price: 14.90, category: 'Ramen', subCategory: 'Pork', image: 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=800&auto=format&fit=crop' },
+  { name: 'Tan Tan Ramen', description: 'Creamy tantamen ramen, sesame broth and spicy ground minced pork', price: 14.90, category: 'Ramen', subCategory: 'Spicy', image: 'https://images.unsplash.com/photo-1557872943-16a5ac26437e?w=800&auto=format&fit=crop' },
+  { name: 'Prawn Tempura Udon', description: 'Hot udon noodle soup made of dashi-based broth with 2 prawn tempura', price: 12.90, category: 'Noodles', subCategory: 'Udon', image: 'https://images.unsplash.com/photo-1617093727343-374698b1b08d?w=800&auto=format&fit=crop' },
+  { name: 'Chicken Yakisoba', description: 'Japanese style stir fried noodles with chicken and vegetables', price: 13.90, category: 'Noodles', subCategory: 'Fried', image: 'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800&auto=format&fit=crop' },
+  { name: 'Tuna (Bluefin) Nigiri', description: 'Raw fish, seafood, vegetable on vinegared rice', price: 3.50, category: 'Sushi', subCategory: 'Nigiri', image: 'https://images.unsplash.com/photo-1579584425555-c3ce17fd4351?w=800&auto=format&fit=crop' },
+  { name: 'Salmon Avocado Roll', description: 'Inside out roll with sesame seeds on top', price: 9.90, category: 'Sushi', subCategory: 'Ura Maki', image: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=800&auto=format&fit=crop' },
+  { name: 'Crunchy Catford Roll', description: 'Snowcrab, avocado, kanpyo, tobiko, soya-mayo, tempura flakes', price: 18.90, category: 'Sushi', subCategory: 'Special Roll', image: 'https://images.unsplash.com/photo-1553621042-f6e147245754?w=800&auto=format&fit=crop' },
+  { name: 'Lychee Martini', description: 'Doghouse Distillery vodka, lychee juice, lychee liqueur, coconut syrup', price: 8.90, category: 'Drinks', subCategory: 'Cocktail', image: 'https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?w=800&auto=format&fit=crop' },
+  { name: 'Asahi Draught Beer', description: '1 pint', price: 6.90, category: 'Drinks', subCategory: 'Beer', image: 'https://images.unsplash.com/photo-1614614214537-567f6a00a12e?w=800&auto=format&fit=crop' },
+  { name: 'Matcha Green Tea Cheesecake', description: 'Creamy cheesecake infused with premium Japanese matcha powder.', price: 7.50, category: 'Dessert', subCategory: 'Cake', image: 'https://images.unsplash.com/photo-1621841957884-1210fe19d66d?w=800&auto=format&fit=crop' }
 ];
 
 // --- Components ---
 
 const Button = ({ children, onClick, className, variant = 'primary', disabled = false, type = 'button' }: { children: React.ReactNode, onClick?: () => void, className?: string, variant?: 'primary' | 'secondary' | 'outline' | 'danger', disabled?: boolean, key?: React.Key, type?: 'button' | 'submit' | 'reset' }) => {
   const variants = {
-    primary: 'bg-orange-600 text-white hover:bg-orange-700',
+    primary: 'bg-yellow-500 text-zinc-900 hover:bg-yellow-600',
     secondary: 'bg-zinc-900 text-white hover:bg-zinc-800',
-    outline: 'border border-zinc-300 text-zinc-700 hover:bg-zinc-50',
+    outline: 'border border-zinc-300 text-zinc-700 hover:bg-zinc-50 flex items-center justify-center gap-2',
     danger: 'bg-red-600 text-white hover:bg-red-700',
   };
 
@@ -118,7 +135,7 @@ const Button = ({ children, onClick, className, variant = 'primary', disabled = 
       disabled={disabled}
       type={type}
       className={cn(
-        'px-4 py-2 rounded-lg font-medium transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none',
+        'px-4 py-2 rounded-lg font-bold transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none',
         variants[variant],
         className
       )}
@@ -141,7 +158,7 @@ const Badge = ({ children, variant = 'neutral' }: { children: React.ReactNode, v
   const variants = {
     neutral: 'bg-zinc-100 text-zinc-600',
     success: 'bg-green-100 text-green-700',
-    warning: 'bg-orange-100 text-orange-700',
+    warning: 'bg-yellow-100 text-yellow-800',
     danger: 'bg-red-100 text-red-700',
     info: 'bg-blue-100 text-blue-700',
   };
@@ -160,10 +177,26 @@ export default function App() {
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
-  const [view, setView] = useState<'home' | 'menu' | 'cart' | 'orders' | 'admin'>('home');
+  const [view, setView] = useState<'home' | 'menu' | 'cart' | 'orders' | 'admin' | 'notifications'>('home');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Menu Categories Filter
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+
+  // Auth Modal State
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [signUpName, setSignUpName] = useState('');
+  const [signUpPhone, setSignUpPhone] = useState('');
+
+  // Profile Edit State
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
   
   // New Menu Item State
   const [newItem, setNewItem] = useState<Omit<MenuItem, 'id'>>({
@@ -183,16 +216,22 @@ export default function App() {
         try {
           const profileDoc = await getDoc(doc(db, 'users', currentUser.uid));
           if (profileDoc.exists()) {
-            setProfile(profileDoc.data() as UserProfile);
+            const data = profileDoc.data() as UserProfile;
+            setProfile(data);
+            setEditName(data.displayName || '');
+            setEditPhone(data.phoneNumber || '');
           } else {
             const newProfile: UserProfile = {
               uid: currentUser.uid,
-              displayName: currentUser.displayName || 'Guest',
-              email: currentUser.email || '',
+              displayName: currentUser.displayName || email.split('@')[0] || 'User',
+              email: currentUser.email || email,
+              phoneNumber: '', // Set empty initially if Google Auth
               role: currentUser.email === 'rijanmhj2075@gmail.com' ? 'admin' : 'customer',
             };
             await setDoc(doc(db, 'users', currentUser.uid), newProfile);
             setProfile(newProfile);
+            setEditName(newProfile.displayName);
+            setEditPhone('');
           }
         } catch (error) {
           handleFirestoreError(error, OperationType.GET, 'users');
@@ -203,7 +242,7 @@ export default function App() {
       setLoading(false);
     });
     return unsubscribe;
-  }, []);
+  }, [email]);
 
   // --- Menu Loading ---
   useEffect(() => {
@@ -220,7 +259,14 @@ export default function App() {
     return unsubscribe;
   }, [profile]);
 
-  // --- Orders Loading ---
+  // Derived Filtered Menu
+  const filteredMenu = selectedCategory === 'All' 
+    ? menu 
+    : menu.filter(item => item.category === selectedCategory);
+
+  // --- Orders Loading & Live Notifications ---
+  const prevOrdersRef = useRef<Order[]>([]);
+
   useEffect(() => {
     if (!user || !profile) return;
 
@@ -232,10 +278,61 @@ export default function App() {
     }
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order)));
+      const fetchedOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+      
+      // Real-time Notification Logic
+      if (prevOrdersRef.current.length > 0 && fetchedOrders.length > 0) {
+        if (profile.role === 'admin') {
+          // Admin alert on new order
+          const newOrders = fetchedOrders.filter(o => !prevOrdersRef.current.find(po => po.id === o.id));
+          newOrders.forEach(o => toast.success(`New order #${o.id.slice(-6)} received from ${o.customerName}!`));
+        } else if (profile.role === 'customer') {
+          // Customer alert on status change
+          fetchedOrders.forEach(o => {
+            const prev = prevOrdersRef.current.find(po => po.id === o.id);
+            if (prev && prev.status !== o.status) {
+              if (o.status === 'ready') {
+                toast.success(`Good news! Your order #${o.id.slice(-6)} is ready for collection! 🍱`, { duration: 6000 });
+              } else if (o.status === 'collected') {
+                toast.success(`Order #${o.id.slice(-6)} has been collected. Enjoy your meal! 😋`, { duration: 6000 });
+              } else {
+                toast.success(`Your order #${o.id.slice(-6)} is now ${o.status}!`);
+              }
+            }
+          });
+        }
+      }
+      
+      prevOrdersRef.current = fetchedOrders;
+      setOrders(fetchedOrders);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'orders'));
     return unsubscribe;
   }, [user, profile]);
+
+  // Derived Notifications for the Bell Page
+  const userNotifications = useMemo(() => {
+    if (!profile) return [];
+    if (profile.role === 'admin') {
+      return orders
+        .filter(o => o.status === 'pending')
+        .map(o => ({
+          id: o.id,
+          title: 'New Collection Order',
+          message: `Order #${o.id.slice(-6)} from ${o.customerName} is waiting to be prepared.`,
+          time: o.createdAt?.toDate()
+        }));
+    } else {
+      return orders
+        // Filter modified: ONLY show active preparations. Clear notification once collected/cancelled.
+        .filter(o => o.status === 'preparing' || o.status === 'ready')
+        .map(o => ({
+          id: o.id,
+          title: o.status === 'ready' ? 'Order Ready for Collection!' : 'Order Status Updated',
+          message: o.status === 'ready' ? `Your collection order #${o.id.slice(-6)} is ready to be picked up.` : `Your order #${o.id.slice(-6)} is now ${o.status}.`,
+          time: o.createdAt?.toDate()
+        }));
+    }
+  }, [orders, profile]);
 
   // --- Cart Logic ---
   const addToCart = (item: MenuItem) => {
@@ -266,12 +363,57 @@ export default function App() {
   const cartTotal = useMemo(() => cart.reduce((sum, item) => sum + (item.price * item.quantity), 0), [cart]);
 
   // --- Actions ---
-  const handleLogin = async () => {
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      toast.error("Please enter email and password");
+      return;
+    }
+
+    try {
+      if (authMode === 'login') {
+        await signInWithEmailAndPassword(auth, email, password);
+        toast.success('Logged in successfully');
+      } else {
+        if (!signUpName || !signUpPhone) {
+          toast.error("Please provide your name and phone number");
+          return;
+        }
+        const userCred = await createUserWithEmailAndPassword(auth, email, password);
+        
+        // Immediately set the user document with extra details
+        const newProfile: UserProfile = {
+          uid: userCred.user.uid,
+          displayName: signUpName,
+          email: email,
+          phoneNumber: signUpPhone,
+          role: email === 'rijanmhj2075@gmail.com' ? 'admin' : 'customer',
+        };
+        await setDoc(doc(db, 'users', userCred.user.uid), newProfile);
+        setProfile(newProfile);
+
+        toast.success('Account created successfully');
+      }
+      setIsAuthOpen(false);
+      setEmail('');
+      setPassword('');
+      setSignUpName('');
+      setSignUpPhone('');
+    } catch (error: any) {
+      console.error("Firebase Email Auth Error:", error);
+      toast.error(`Authentication failed: ${error.message}`);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
       toast.success('Logged in successfully');
-    } catch (error) {
-      toast.error('Login failed');
+      setIsAuthOpen(false);
+    } catch (error: any) {
+      console.error("Firebase Google Login Error Details:", error);
+      toast.error(`Login failed: ${error.message}`);
     }
   };
 
@@ -281,20 +423,43 @@ export default function App() {
     toast.success('Logged out');
   };
 
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    try {
+      await setDoc(doc(db, 'users', user.uid), { 
+        displayName: editName, 
+        phoneNumber: editPhone 
+      }, { merge: true });
+      
+      setProfile(prev => prev ? { ...prev, displayName: editName, phoneNumber: editPhone } : null);
+      toast.success('Personal details updated successfully!');
+    } catch (error) {
+      toast.error('Failed to update details.');
+    }
+  };
+
   const placeOrder = async () => {
     if (!user || !profile) {
-      toast.error('Please login to place an order');
+      setIsAuthOpen(true);
       return;
     }
 
     if (cart.length === 0) return;
+
+    // PRE-ORDER CHECK: Ensure customer has name and phone number
+    if (!profile.displayName || !profile.phoneNumber) {
+      toast.error('Please update your Name and Phone Number in "My Orders" before placing an order.', { duration: 5000 });
+      setView('orders');
+      return;
+    }
 
     try {
       const orderData: Omit<Order, 'id'> = {
         userId: user.uid,
         customerName: profile.displayName,
         customerEmail: profile.email,
-        customerAddress: '123 Taro Street, London, UK', // Mock address for now
+        customerPhone: profile.phoneNumber,
         items: cart,
         totalAmount: cartTotal,
         status: 'pending',
@@ -304,7 +469,7 @@ export default function App() {
       await addDoc(collection(db, 'orders'), orderData);
       setCart([]);
       setView('orders');
-      toast.success('Order placed successfully!');
+      toast.success('Collection Order placed successfully!');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'orders');
     }
@@ -313,9 +478,21 @@ export default function App() {
   const updateOrderStatus = async (orderId: string, status: Order['status']) => {
     try {
       await setDoc(doc(db, 'orders', orderId), { status }, { merge: true });
-      toast.success(`Order marked as ${status}`);
+      // customer toast notification handled by onSnapshot
+      toast.success(`Marked as ${status}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'orders');
+    }
+  };
+
+  const handleDeleteOrder = async (orderId: string) => {
+    if (window.confirm("Are you sure you want to permanently delete this order?")) {
+      try {
+        await deleteDoc(doc(db, 'orders', orderId));
+        toast.success("Order deleted successfully");
+      } catch (error) {
+        toast.error("Failed to delete order");
+      }
     }
   };
 
@@ -350,7 +527,6 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check file size (e.g., 2MB limit)
     if (file.size > 2 * 1024 * 1024) {
       toast.error('Image size must be less than 2MB');
       return;
@@ -378,7 +554,7 @@ export default function App() {
         <motion.div 
           animate={{ rotate: 360 }} 
           transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
-          className="text-orange-600"
+          className="text-yellow-500"
         >
           <ChefHat size={48} />
         </motion.div>
@@ -390,59 +566,203 @@ export default function App() {
     <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans">
       <Toaster position="top-center" />
       
-      {/* --- Navigation --- */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-zinc-200 px-4 md:px-8 py-4">
+      {/* --- Yellow Navigation --- */}
+      <nav className="sticky top-0 z-50 bg-yellow-400 border-b border-yellow-500 px-4 md:px-8 py-4 shadow-sm">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div 
             className="flex items-center gap-2 cursor-pointer" 
             onClick={() => setView('home')}
           >
-            <div className="bg-orange-600 p-2 rounded-lg text-white">
-              <UtensilsCrossed size={24} />
-            </div>
-            <span className="text-xl font-bold tracking-tight">TARO</span>
+            <img src="/logo.png" alt="Brand Logo" className="h-10 w-auto object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
           </div>
 
           <div className="hidden md:flex items-center gap-8">
-            <button onClick={() => setView('home')} className={cn('text-sm font-medium hover:text-orange-600 transition-colors', view === 'home' && 'text-orange-600')}>Home</button>
-            <button onClick={() => setView('menu')} className={cn('text-sm font-medium hover:text-orange-600 transition-colors', view === 'menu' && 'text-orange-600')}>Menu</button>
-            {user && <button onClick={() => setView('orders')} className={cn('text-sm font-medium hover:text-orange-600 transition-colors', view === 'orders' && 'text-orange-600')}>My Orders</button>}
-            {profile?.role === 'admin' && <button onClick={() => setView('admin')} className={cn('text-sm font-medium hover:text-orange-600 transition-colors', view === 'admin' && 'text-orange-600')}>Admin</button>}
+            <button onClick={() => setView('home')} className={cn('text-sm font-bold transition-colors hover:text-white', view === 'home' ? 'text-zinc-900' : 'text-zinc-700')}>Home</button>
+            <button onClick={() => setView('menu')} className={cn('text-sm font-bold transition-colors hover:text-white', view === 'menu' ? 'text-zinc-900' : 'text-zinc-700')}>Menu</button>
+            {user && <button onClick={() => setView('orders')} className={cn('text-sm font-bold transition-colors hover:text-white', view === 'orders' ? 'text-zinc-900' : 'text-zinc-700')}>My Orders</button>}
+            {profile?.role === 'admin' && <button onClick={() => setView('admin')} className={cn('text-sm font-bold transition-colors hover:text-white', view === 'admin' ? 'text-zinc-900' : 'text-zinc-700')}>Admin</button>}
           </div>
 
           <div className="flex items-center gap-4">
-            <button 
-              onClick={() => setView('cart')}
-              className="relative p-2 text-zinc-600 hover:text-orange-600 transition-colors"
-            >
-              <ShoppingBag size={24} />
-              {cart.length > 0 && (
-                <span className="absolute top-0 right-0 bg-orange-600 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">
-                  {cart.reduce((s, i) => s + i.quantity, 0)}
-                </span>
-              )}
-            </button>
+            {/* Notification Bell */}
+            {user && (
+              <button 
+                onClick={() => setView('notifications')}
+                className="relative p-2 text-zinc-800 hover:text-white transition-colors"
+              >
+                <Bell size={24} />
+                {userNotifications.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full border border-white">
+                    {userNotifications.length}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* Shopping Cart - Hidden for Admins */}
+            {profile?.role !== 'admin' && (
+              <button 
+                onClick={() => setView('cart')}
+                className="relative p-2 text-zinc-800 hover:text-white transition-colors"
+              >
+                <ShoppingBag size={24} />
+                {cart.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-zinc-900 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full border border-white">
+                    {cart.reduce((s, i) => s + i.quantity, 0)}
+                  </span>
+                )}
+              </button>
+            )}
 
             {user ? (
-              <div className="flex items-center gap-3 pl-4 border-l border-zinc-200">
+              <div className="flex items-center gap-3 pl-4 border-l border-yellow-500/30">
                 <div className="hidden md:block text-right">
-                  <p className="text-xs font-bold">{profile?.displayName}</p>
-                  <p className="text-[10px] text-zinc-500 capitalize">{profile?.role}</p>
+                  <p className="text-xs font-bold text-zinc-900">{profile?.displayName}</p>
+                  <p className="text-[10px] text-zinc-700 capitalize">{profile?.role}</p>
                 </div>
-                <button onClick={handleLogout} className="p-2 text-zinc-400 hover:text-red-600 transition-colors">
+                <button onClick={handleLogout} className="p-2 text-zinc-800 hover:text-red-600 transition-colors">
                   <LogOut size={20} />
                 </button>
               </div>
             ) : (
-              <Button onClick={handleLogin} className="hidden md:block">Login / Sign Up</Button>
+              <Button onClick={() => setIsAuthOpen(true)} className="hidden md:block bg-zinc-900 text-white hover:bg-zinc-800">Login / Sign Up</Button>
             )}
 
-            <button className="md:hidden p-2" onClick={() => setIsMenuOpen(!isMenuOpen)}>
+            <button className="md:hidden p-2 text-zinc-900 hover:text-white transition-colors" onClick={() => setIsMenuOpen(!isMenuOpen)}>
               {isMenuOpen ? <X /> : <MenuIcon />}
             </button>
           </div>
         </div>
       </nav>
+
+      {/* --- Authentication Modal --- */}
+      <AnimatePresence>
+        {isAuthOpen && (
+          <div className="fixed inset-0 z-[60] bg-zinc-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl relative"
+            >
+              <button 
+                onClick={() => setIsAuthOpen(false)} 
+                className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-900 z-10"
+              >
+                <X size={20} />
+              </button>
+
+              <div className="p-8 space-y-6">
+                <div className="text-center space-y-2">
+                  <h2 className="text-3xl font-black tracking-tight">
+                    {authMode === 'login' ? 'WELCOME BACK' : 'CREATE ACCOUNT'}
+                  </h2>
+                  <p className="text-zinc-500 text-sm">
+                    {authMode === 'login' ? 'Enter your details to access your account' : 'Join us for delicious Japanese cuisine'}
+                  </p>
+                </div>
+
+                {/* Tabs */}
+                <div className="flex p-1 bg-zinc-100 rounded-lg">
+                  <button 
+                    onClick={() => setAuthMode('login')}
+                    className={cn("flex-1 py-2 text-sm font-bold rounded-md transition-all", authMode === 'login' ? "bg-white shadow-sm text-zinc-900" : "text-zinc-500 hover:text-zinc-900")}
+                  >
+                    Login
+                  </button>
+                  <button 
+                    onClick={() => setAuthMode('signup')}
+                    className={cn("flex-1 py-2 text-sm font-bold rounded-md transition-all", authMode === 'signup' ? "bg-white shadow-sm text-zinc-900" : "text-zinc-500 hover:text-zinc-900")}
+                  >
+                    Sign Up
+                  </button>
+                </div>
+
+                <form onSubmit={handleEmailAuth} className="space-y-4">
+                  
+                  {/* Additional fields for Sign Up */}
+                  {authMode === 'signup' && (
+                    <>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold uppercase text-zinc-400">Full Name</label>
+                        <input 
+                          type="text" 
+                          required
+                          value={signUpName}
+                          onChange={(e) => setSignUpName(e.target.value)}
+                          className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-yellow-500 outline-none transition-all"
+                          placeholder="John Doe"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold uppercase text-zinc-400">Phone Number</label>
+                        <input 
+                          type="tel" 
+                          required
+                          value={signUpPhone}
+                          onChange={(e) => setSignUpPhone(e.target.value)}
+                          className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-yellow-500 outline-none transition-all"
+                          placeholder="07123456789"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase text-zinc-400">Email Address</label>
+                    <input 
+                      type="email" 
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-yellow-500 outline-none transition-all"
+                      placeholder="you@example.com"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase text-zinc-400">Password</label>
+                    <div className="relative">
+                      <input 
+                        type={showPassword ? "text" : "password"} 
+                        required
+                        minLength={6}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full p-3 pr-10 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-yellow-500 outline-none transition-all"
+                        placeholder="••••••••"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                  </div>
+                  <Button type="submit" className="w-full py-3">
+                    {authMode === 'login' ? 'Sign In' : 'Create Account'}
+                  </Button>
+                </form>
+
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-zinc-200"></div>
+                  </div>
+                  <div className="relative flex justify-center text-xs">
+                    <span className="bg-white px-2 text-zinc-400 uppercase font-bold tracking-widest">Or continue with</span>
+                  </div>
+                </div>
+
+                <Button variant="outline" onClick={handleGoogleLogin} className="w-full py-3">
+                   <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                   Google
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* --- Mobile Menu --- */}
       <AnimatePresence>
@@ -456,9 +776,10 @@ export default function App() {
             <div className="flex flex-col gap-6 text-2xl font-bold">
               <button onClick={() => { setView('home'); setIsMenuOpen(false); }}>Home</button>
               <button onClick={() => { setView('menu'); setIsMenuOpen(false); }}>Menu</button>
-              {user && <button onClick={() => { setView('orders'); setIsMenuOpen(false); }}>My Orders</button>}
+              {user && <button onClick={() => { setView('orders'); setIsMenuOpen(false); }}>My Orders & Profile</button>}
+              {user && <button onClick={() => { setView('notifications'); setIsMenuOpen(false); }}>Notifications</button>}
               {profile?.role === 'admin' && <button onClick={() => { setView('admin'); setIsMenuOpen(false); }}>Admin Dashboard</button>}
-              {!user && <button onClick={handleLogin} className="text-orange-600">Login</button>}
+              {!user && <button onClick={() => { setIsAuthOpen(true); setIsMenuOpen(false); }} className="text-yellow-500">Login / Sign Up</button>}
               {user && <button onClick={handleLogout} className="text-red-600">Logout</button>}
             </div>
           </motion.div>
@@ -475,10 +796,10 @@ export default function App() {
               <div className="flex-1 space-y-6">
                 <Badge variant="warning">Authentic Japanese Cuisine</Badge>
                 <h1 className="text-6xl md:text-8xl font-black tracking-tighter leading-[0.9]">
-                  FRESH.<br />TRADITIONAL.<br /><span className="text-orange-600">TARO.</span>
+                  FRESH.<br />TRADITIONAL.<br /><span className="text-yellow-500">FLAVOR.</span>
                 </h1>
                 <p className="text-zinc-500 text-lg max-w-md">
-                  Experience the finest Japanese dining in the heart of London. From hand-rolled sushi to steaming bowls of ramen.
+                  Experience the finest Japanese dining. Order online for quick and easy collection.
                 </p>
                 <div className="flex gap-4">
                   <Button onClick={() => setView('menu')} className="px-8 py-4 text-lg">Order Now</Button>
@@ -494,7 +815,7 @@ export default function App() {
                   <img src="https://images.unsplash.com/photo-1553621042-f6e147245754?w=1200&auto=format&fit=crop" alt="Sushi" className="w-full h-[500px] object-cover" referrerPolicy="no-referrer" />
                 </motion.div>
                 <div className="absolute -bottom-6 -left-6 bg-white p-6 rounded-2xl shadow-xl border border-zinc-100 -rotate-6">
-                  <p className="text-3xl font-black text-orange-600">4.9/5</p>
+                  <p className="text-3xl font-black text-yellow-500">4.9/5</p>
                   <p className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Customer Rating</p>
                 </div>
               </div>
@@ -503,7 +824,7 @@ export default function App() {
             <section className="space-y-12">
               <div className="flex items-end justify-between">
                 <div>
-                  <p className="text-xs font-bold text-orange-600 uppercase tracking-widest mb-2">Popular Choices</p>
+                  <p className="text-xs font-bold text-yellow-500 uppercase tracking-widest mb-2">Popular Choices</p>
                   <h2 className="text-4xl font-black tracking-tight">CHEF'S SPECIALS</h2>
                 </div>
                 <Button variant="outline" onClick={() => setView('menu')}>View Full Menu <ChevronRight size={16} className="inline ml-1" /></Button>
@@ -517,11 +838,11 @@ export default function App() {
                     <div className="p-6 space-y-2">
                       <div className="flex justify-between items-start">
                         <h3 className="font-bold text-lg">{item.name}</h3>
-                        <p className="font-black text-orange-600">£{item.price.toFixed(2)}</p>
+                        <p className="font-black text-yellow-500">£{item.price.toFixed(2)}</p>
                       </div>
                       <p className="text-sm text-zinc-500 line-clamp-2">{item.description}</p>
                       <div className="pt-4">
-                        <Button variant="secondary" className="w-full">Add to Cart</Button>
+                        <Button variant="secondary" className="w-full bg-zinc-900 text-white">Add to Cart</Button>
                       </div>
                     </div>
                   </Card>
@@ -539,16 +860,24 @@ export default function App() {
               <p className="text-zinc-500 max-w-xl mx-auto">Browse our selection of authentic Japanese dishes, prepared fresh daily by our master chefs.</p>
             </div>
 
-            <div className="flex flex-wrap justify-center gap-4">
-              {['All', 'Sushi', 'Ramen', 'Main', 'Starters', 'Dessert'].map(cat => (
-                <Button key={cat} variant="outline" className="rounded-full px-6">
-                  {cat}
-                </Button>
-              ))}
+            {/* Scrollable Categories */}
+            <div className="w-full overflow-x-auto pb-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+              <div className="flex gap-4 min-w-max px-4 justify-start md:justify-center">
+                {['All', 'Starters', 'Main', 'Sushi', 'Ramen', 'Noodles', 'Drinks', 'Dessert'].map(cat => (
+                  <Button 
+                    key={cat} 
+                    variant={selectedCategory === cat ? 'primary' : 'outline'} 
+                    className="rounded-full px-6 whitespace-nowrap"
+                    onClick={() => setSelectedCategory(cat)}
+                  >
+                    {cat}
+                  </Button>
+                ))}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
-              {menu.map((item) => (
+              {filteredMenu.map((item) => (
                 <Card key={item.id} className="group">
                   <div className="h-48 overflow-hidden">
                     <img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" referrerPolicy="no-referrer" />
@@ -561,10 +890,10 @@ export default function App() {
                     <h3 className="font-bold">{item.name}</h3>
                     <p className="text-xs text-zinc-500 line-clamp-2 h-8">{item.description}</p>
                     <div className="flex items-center justify-between pt-4">
-                      <p className="font-black text-orange-600">£{item.price.toFixed(2)}</p>
+                      <p className="font-black text-yellow-500">£{item.price.toFixed(2)}</p>
                       <button 
                         onClick={() => addToCart(item)}
-                        className="bg-zinc-900 text-white p-2 rounded-lg hover:bg-orange-600 transition-colors"
+                        className="bg-zinc-900 text-white p-2 rounded-lg hover:bg-yellow-500 hover:text-zinc-900 transition-colors"
                       >
                         <Plus size={18} />
                       </button>
@@ -600,12 +929,12 @@ export default function App() {
                       <img src={item.image} alt={item.name} className="w-20 h-20 rounded-lg object-cover" referrerPolicy="no-referrer" />
                       <div className="flex-1">
                         <h3 className="font-bold">{item.name}</h3>
-                        <p className="text-sm text-orange-600 font-bold">£{item.price.toFixed(2)}</p>
+                        <p className="text-sm text-yellow-500 font-bold">£{item.price.toFixed(2)}</p>
                       </div>
                       <div className="flex items-center gap-3 bg-zinc-100 rounded-lg p-1">
-                        <button onClick={() => updateQuantity(item.id, -1)} className="p-1 hover:text-orange-600"><Minus size={16} /></button>
+                        <button onClick={() => updateQuantity(item.id, -1)} className="p-1 hover:text-yellow-500"><Minus size={16} /></button>
                         <span className="font-bold w-6 text-center">{item.quantity}</span>
-                        <button onClick={() => updateQuantity(item.id, 1)} className="p-1 hover:text-orange-600"><Plus size={16} /></button>
+                        <button onClick={() => updateQuantity(item.id, 1)} className="p-1 hover:text-yellow-500"><Plus size={16} /></button>
                       </div>
                       <button onClick={() => removeFromCart(item.id)} className="text-zinc-400 hover:text-red-600 p-2">
                         <Trash2 size={20} />
@@ -623,26 +952,28 @@ export default function App() {
                         <span className="font-bold">£{cartTotal.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-zinc-500">Delivery</span>
+                        <span className="text-zinc-500">Collection</span>
                         <span className="text-green-600 font-bold">FREE</span>
                       </div>
                       <div className="border-t border-zinc-100 pt-4 mt-4 flex justify-between text-lg font-black">
                         <span>Total</span>
-                        <span className="text-orange-600">£{cartTotal.toFixed(2)}</span>
+                        <span className="text-yellow-500">£{cartTotal.toFixed(2)}</span>
                       </div>
                     </div>
+                    
+                    {/* Warning if profile is incomplete */}
+                    {user && profile && (!profile.displayName || !profile.phoneNumber) && (
+                      <div className="bg-yellow-50 text-yellow-800 p-3 rounded-lg text-xs font-bold border border-yellow-200">
+                        Please update your name and phone number in the Profile section to complete checkout.
+                      </div>
+                    )}
+
                     <Button 
                       className="w-full py-4 text-lg" 
                       onClick={placeOrder}
-                      disabled={!user}
                     >
-                      {user ? 'Checkout' : 'Login to Checkout'}
+                      {user ? 'Checkout (Collection)' : 'Login to Checkout'}
                     </Button>
-                    {!user && (
-                      <p className="text-[10px] text-center text-zinc-400 uppercase font-bold tracking-widest">
-                        Please login to complete your order
-                      </p>
-                    )}
                   </Card>
                 </div>
               </div>
@@ -650,10 +981,76 @@ export default function App() {
           </div>
         )}
 
-        {/* Orders View */}
+        {/* Notifications View */}
+        {view === 'notifications' && (
+          <div className="max-w-4xl mx-auto space-y-8">
+            <h2 className="text-4xl font-black tracking-tight">NOTIFICATIONS</h2>
+            <div className="space-y-4">
+              {userNotifications.length === 0 ? (
+                <div className="text-center py-24 bg-white rounded-3xl border border-zinc-200">
+                  <div className="bg-zinc-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto text-zinc-400 mb-4">
+                    <Bell size={32} />
+                  </div>
+                  <p className="text-zinc-500">No new notifications.</p>
+                </div>
+              ) : (
+                userNotifications.map((note, idx) => (
+                  <Card key={idx} className="p-6 flex items-start gap-4">
+                    <div className="bg-yellow-100 p-3 rounded-full text-yellow-600">
+                      <Bell size={24} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold">{note.title}</h3>
+                      <p className="text-zinc-600">{note.message}</p>
+                      <p className="text-xs text-zinc-400 mt-2">{note.time?.toLocaleString()}</p>
+                    </div>
+                  </Card>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Orders / Profile View */}
         {view === 'orders' && (
           <div className="max-w-4xl mx-auto space-y-8">
-            <h2 className="text-4xl font-black tracking-tight">MY ORDERS</h2>
+            <h2 className="text-4xl font-black tracking-tight">MY ACCOUNT</h2>
+
+            {/* Profile Edit Form */}
+            <Card className="p-6 space-y-4 border-l-4 border-l-yellow-500">
+              <h3 className="font-bold text-xl flex items-center gap-2">Personal Details</h3>
+              <p className="text-sm text-zinc-500">Update your details. Your phone number is required so we can contact you regarding your collection order.</p>
+              
+              <form onSubmit={handleUpdateProfile} className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase text-zinc-400">Full Name</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-yellow-500 outline-none"
+                    placeholder="Your Name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase text-zinc-400">Phone Number</label>
+                  <input 
+                    type="tel" 
+                    required
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-yellow-500 outline-none"
+                    placeholder="07123456789"
+                  />
+                </div>
+                <div className="md:col-span-2 pt-2">
+                  <Button type="submit" variant="secondary">Save Details</Button>
+                </div>
+              </form>
+            </Card>
+
+            <h2 className="text-2xl font-black tracking-tight pt-4">ORDER HISTORY</h2>
             
             <div className="space-y-6">
               {orders.length === 0 ? (
@@ -670,13 +1067,23 @@ export default function App() {
                           <Clock size={14} /> {order.createdAt?.toDate().toLocaleString()}
                         </p>
                       </div>
-                      <Badge variant={
-                        order.status === 'delivered' ? 'success' : 
-                        order.status === 'cancelled' ? 'danger' : 
-                        order.status === 'preparing' ? 'info' : 'warning'
-                      }>
-                        {order.status}
-                      </Badge>
+                      <div className="flex gap-2 items-center">
+                        <Badge variant={
+                          order.status === 'collected' ? 'success' : 
+                          order.status === 'cancelled' ? 'danger' : 
+                          order.status === 'ready' ? 'success' : 
+                          order.status === 'preparing' ? 'info' : 'warning'
+                        }>
+                          {order.status}
+                        </Badge>
+                        
+                        {/* ONLY ADMIN CAN DELETE HERE IF IT APPEARS */}
+                        {profile?.role === 'admin' && (
+                          <button onClick={() => handleDeleteOrder(order.id)} className="text-zinc-300 hover:text-red-600 ml-2" title="Delete Order">
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     
                     <div className="border-t border-zinc-100 pt-4 space-y-2">
@@ -690,7 +1097,7 @@ export default function App() {
 
                     <div className="border-t border-zinc-100 pt-4 flex justify-between items-center">
                       <p className="text-sm font-bold">Total Amount</p>
-                      <p className="text-xl font-black text-orange-600">£{order.totalAmount.toFixed(2)}</p>
+                      <p className="text-xl font-black text-yellow-500">£{order.totalAmount.toFixed(2)}</p>
                     </div>
                   </Card>
                 ))
@@ -704,7 +1111,7 @@ export default function App() {
           <div className="space-y-12">
             <div className="flex items-center justify-between">
               <h2 className="text-4xl font-black tracking-tight flex items-center gap-3">
-                <LayoutDashboard className="text-orange-600" /> ADMIN DASHBOARD
+                <LayoutDashboard className="text-yellow-500" /> ADMIN DASHBOARD
               </h2>
               <div className="flex gap-4">
                 <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-sm">
@@ -713,7 +1120,7 @@ export default function App() {
                 </div>
                 <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-sm">
                   <p className="text-xs font-bold text-zinc-400 uppercase">Revenue</p>
-                  <p className="text-2xl font-black text-orange-600">£{orders.reduce((s, o) => s + o.totalAmount, 0).toFixed(2)}</p>
+                  <p className="text-2xl font-black text-yellow-500">£{orders.reduce((s, o) => s + o.totalAmount, 0).toFixed(2)}</p>
                 </div>
               </div>
             </div>
@@ -721,7 +1128,7 @@ export default function App() {
             {/* Add Menu Item Form */}
             <Card className="p-8 space-y-6">
               <h3 className="text-2xl font-bold flex items-center gap-2">
-                <Plus className="text-orange-600" /> Add New Menu Item
+                <Plus className="text-yellow-500" /> Add New Menu Item
               </h3>
               <form onSubmit={handleAddMenuItem} className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
@@ -731,7 +1138,7 @@ export default function App() {
                     required
                     value={newItem.name}
                     onChange={e => setNewItem({...newItem, name: e.target.value})}
-                    className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-orange-600 outline-none"
+                    className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-yellow-500 outline-none"
                     placeholder="e.g. Spicy Tuna Roll"
                   />
                 </div>
@@ -743,7 +1150,7 @@ export default function App() {
                     required
                     value={newItem.price}
                     onChange={e => setNewItem({...newItem, price: parseFloat(e.target.value)})}
-                    className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-orange-600 outline-none"
+                    className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-yellow-500 outline-none"
                     placeholder="0.00"
                   />
                 </div>
@@ -752,9 +1159,9 @@ export default function App() {
                   <select 
                     value={newItem.category}
                     onChange={e => setNewItem({...newItem, category: e.target.value})}
-                    className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-orange-600 outline-none"
+                    className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-yellow-500 outline-none"
                   >
-                    {['Sushi', 'Ramen', 'Main', 'Starters', 'Dessert'].map(cat => (
+                    {['Starters', 'Main', 'Sushi', 'Ramen', 'Noodles', 'Drinks', 'Dessert'].map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </select>
@@ -765,7 +1172,7 @@ export default function App() {
                     type="text" 
                     value={newItem.subCategory}
                     onChange={e => setNewItem({...newItem, subCategory: e.target.value})}
-                    className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-orange-600 outline-none"
+                    className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-yellow-500 outline-none"
                     placeholder="e.g. Nigiri, Maki, Spicy"
                   />
                 </div>
@@ -784,7 +1191,7 @@ export default function App() {
                       <label 
                         htmlFor="image-upload"
                         className={cn(
-                          "flex items-center justify-center gap-2 w-full p-3 rounded-lg border-2 border-dashed border-zinc-200 cursor-pointer hover:border-orange-600 hover:bg-orange-50 transition-all",
+                          "flex items-center justify-center gap-2 w-full p-3 rounded-lg border-2 border-dashed border-zinc-200 cursor-pointer hover:border-yellow-500 hover:bg-yellow-50 transition-all",
                           isUploading && "opacity-50 cursor-not-allowed"
                         )}
                       >
@@ -810,7 +1217,7 @@ export default function App() {
                   <textarea 
                     value={newItem.description}
                     onChange={e => setNewItem({...newItem, description: e.target.value})}
-                    className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-orange-600 outline-none h-24"
+                    className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-yellow-500 outline-none h-24"
                     placeholder="Describe the dish..."
                   />
                 </div>
@@ -821,24 +1228,35 @@ export default function App() {
             </Card>
 
             <div className="space-y-4">
-              <h3 className="text-xl font-bold">Recent Orders</h3>
+              <h3 className="text-xl font-bold">Manage Orders</h3>
               <div className="grid grid-cols-1 gap-4">
-                {orders.map((order) => (
+                {orders.map((order) => {
+                  const pastOrdersCount = orders.filter(o => o.userId === order.userId).length;
+                  return (
                   <Card key={order.id} className="p-6 flex flex-col md:flex-row gap-6 items-start md:items-center">
                     <div className="flex-1 space-y-2">
                       <div className="flex items-center gap-2">
                         <Badge variant={
-                          order.status === 'delivered' ? 'success' : 
+                          order.status === 'collected' ? 'success' : 
                           order.status === 'cancelled' ? 'danger' : 
+                          order.status === 'ready' ? 'success' : 
                           order.status === 'preparing' ? 'info' : 'warning'
                         }>
                           {order.status}
                         </Badge>
                         <span className="text-xs font-bold text-zinc-400">#{order.id.slice(-6)}</span>
                       </div>
-                      <p className="font-bold">{order.customerName}</p>
+                      
+                      {/* Customer Details visible to Admin */}
+                      <p className="font-bold text-lg">{order.customerName}</p>
+                      <p className="text-xs text-zinc-500 flex items-center gap-1"><Phone size={12}/> {order.customerPhone || 'No Phone Provided'}</p>
                       <p className="text-xs text-zinc-500">{order.customerEmail}</p>
-                      <div className="text-xs text-zinc-400 flex items-center gap-1">
+                      
+                      <div className="bg-yellow-50 text-yellow-800 text-xs font-bold px-2 py-1 rounded-md inline-block mt-2">
+                        Total Orders by this Customer: {pastOrdersCount}
+                      </div>
+
+                      <div className="text-xs text-zinc-400 flex items-center gap-1 mt-2">
                         <Clock size={12} /> {order.createdAt?.toDate().toLocaleString()}
                       </div>
                     </div>
@@ -846,29 +1264,37 @@ export default function App() {
                     <div className="flex-1 border-l border-zinc-100 pl-6">
                       <p className="text-xs font-bold text-zinc-400 uppercase mb-2">Items</p>
                       {order.items.map((item, idx) => (
-                        <p key={idx} className="text-xs">{item.quantity}x {item.name}</p>
+                        <p key={idx} className="text-sm">{item.quantity}x {item.name}</p>
                       ))}
                     </div>
 
                     <div className="text-right space-y-4">
-                      <p className="text-xl font-black">£{order.totalAmount.toFixed(2)}</p>
-                      <div className="flex gap-2">
+                      <p className="text-xl font-black text-yellow-500">£{order.totalAmount.toFixed(2)}</p>
+                      <div className="flex gap-2 justify-end flex-wrap">
                         {order.status === 'pending' && (
                           <Button onClick={() => updateOrderStatus(order.id, 'preparing')}>Start Preparing</Button>
                         )}
                         {order.status === 'preparing' && (
-                          <Button variant="outline" onClick={() => updateOrderStatus(order.id, 'delivered')}>Mark Delivered</Button>
+                          <Button onClick={() => updateOrderStatus(order.id, 'ready')} className="bg-green-500 text-white hover:bg-green-600">Mark Ready</Button>
                         )}
-                        {order.status !== 'delivered' && order.status !== 'cancelled' && (
-                          <button onClick={() => updateOrderStatus(order.id, 'cancelled')} className="p-2 text-zinc-300 hover:text-red-600">
+                        {order.status === 'ready' && (
+                          <Button variant="outline" onClick={() => updateOrderStatus(order.id, 'collected')}>Mark Collected</Button>
+                        )}
+                        {order.status !== 'collected' && order.status !== 'cancelled' && (
+                          <button onClick={() => updateOrderStatus(order.id, 'cancelled')} className="p-2 text-zinc-300 hover:text-red-600" title="Cancel Order">
                             <XCircle size={20} />
                           </button>
                         )}
-                        {order.status === 'delivered' && <CheckCircle className="text-green-500" />}
+                        {order.status === 'collected' && <CheckCircle className="text-green-500" />}
+                        
+                        {/* ONLY ADMIN SEES THIS TRASH CAN */}
+                        <button onClick={() => handleDeleteOrder(order.id)} className="p-2 text-zinc-300 hover:text-red-600" title="Delete Order Completely">
+                          <Trash2 size={20} />
+                        </button>
                       </div>
                     </div>
                   </Card>
-                ))}
+                )})}
               </div>
             </div>
           </div>
@@ -881,8 +1307,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-8 grid grid-cols-1 md:grid-cols-4 gap-12">
           <div className="space-y-6">
             <div className="flex items-center gap-2 text-white">
-              <UtensilsCrossed size={24} />
-              <span className="text-xl font-bold tracking-tight">TARO</span>
+              <img src="/logo.png" alt="Brand Logo" className="h-10 w-auto object-contain grayscale invert" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
             </div>
             <p className="text-sm leading-relaxed">
               Bringing the authentic taste of Japan to your doorstep. Quality ingredients, traditional methods, and modern convenience.
@@ -891,24 +1316,24 @@ export default function App() {
           <div className="space-y-4">
             <h4 className="text-white font-bold uppercase tracking-widest text-xs">Quick Links</h4>
             <ul className="space-y-2 text-sm">
-              <li><button onClick={() => setView('home')}>Home</button></li>
-              <li><button onClick={() => setView('menu')}>Menu</button></li>
-              <li><button onClick={() => setView('orders')}>My Orders</button></li>
+              <li><button onClick={() => setView('home')} className="hover:text-yellow-500">Home</button></li>
+              <li><button onClick={() => setView('menu')} className="hover:text-yellow-500">Menu</button></li>
+              <li><button onClick={() => setView('orders')} className="hover:text-yellow-500">My Orders</button></li>
             </ul>
           </div>
           <div className="space-y-4">
             <h4 className="text-white font-bold uppercase tracking-widest text-xs">Contact</h4>
             <ul className="space-y-2 text-sm">
-              <li>123 Taro Street, London</li>
-              <li>+44 20 1234 5678</li>
+              <li>2 Catford Broadway, London</li>
+              <li>+44 020 3336 7752</li>
               <li>hello@tarorestaurants.uk</li>
             </ul>
           </div>
           <div className="space-y-4">
             <h4 className="text-white font-bold uppercase tracking-widest text-xs">Hours</h4>
             <ul className="space-y-2 text-sm">
-              <li>Mon - Fri: 11am - 10pm</li>
-              <li>Sat - Sun: 12pm - 11pm</li>
+              <li>Mon - Sat: 12:00pm - 10:00pm</li>
+              <li>Sun: 12:00pm - 9:30pm</li>
             </ul>
           </div>
         </div>
