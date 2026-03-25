@@ -1,0 +1,51 @@
+{
+  "entities": {
+    "MenuItem": {
+      "title": "MenuItem",
+      "description": "A food item on the menu",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the dish" },
+        "description": { "type": "string", "description": "Description of the dish" },
+        "price": { "type": "number", "description": "Price in GBP" },
+        "category": { "type": "string", "description": "Category (e.g., Starters, Main, Dessert)" },
+        "subCategory": { "type": "string", "description": "Sub-category (e.g., Nigiri, Maki)" },
+        "image": { "type": "string", "description": "URL to the image" }
+      },
+      "required": ["name", "price", "category"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "A customer order",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of the customer" },
+        "customerName": { "type": "string", "description": "Name of the customer" },
+        "customerEmail": { "type": "string", "description": "Email of the customer" },
+        "customerAddress": { "type": "string", "description": "Delivery address" },
+        "items": { "type": "array", "items": { "type": "object" }, "description": "List of items ordered" },
+        "totalAmount": { "type": "number", "description": "Total price of the order" },
+        "status": { "type": "string", "enum": ["pending", "preparing", "delivered", "cancelled"], "description": "Current status of the order" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the order was placed" }
+      },
+      "required": ["userId", "customerName", "items", "totalAmount", "status", "createdAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "displayName": { "type": "string", "description": "User's display name" },
+        "email": { "type": "string", "description": "User's email" },
+        "role": { "type": "string", "enum": ["admin", "customer"], "description": "User's role" }
+      },
+      "required": ["uid", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/menu": { "schema": "MenuItem", "description": "Collection of all menu items" },
+    "/orders": { "schema": "Order", "description": "Collection of all customer orders" },
+    "/users": { "schema": "User", "description": "Collection of user profiles" }
+  }
+}
