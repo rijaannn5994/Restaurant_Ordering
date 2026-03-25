@@ -9,8 +9,7 @@
         "description": { "type": "string", "description": "Description of the dish" },
         "price": { "type": "number", "description": "Price in GBP" },
         "category": { "type": "string", "description": "Category (e.g., Starters, Main, Dessert)" },
-        "subCategory": { "type": "string", "description": "Sub-category (e.g., Nigiri, Maki)" },
-        "image": { "type": "string", "description": "URL to the image" }
+        "subCategory": { "type": "string", "description": "Sub-category (e.g., Nigiri, Maki)" }
       },
       "required": ["name", "price", "category"]
     },
